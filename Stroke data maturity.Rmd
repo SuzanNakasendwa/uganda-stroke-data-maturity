@@ -1,0 +1,605 @@
+---
+title: "STOKE DATA Maturity"
+author: "Analysis By Suzan Nakasendwa"
+date: "Last modified: 7th Sept 2026"
+output:
+  word_document: 
+    toc: true
+    fig_width: 7
+    fig_height: 5
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: false
+  pdf_document:
+    toc: true
+editor_options: 
+  chunk_output_type: console
+---
+
+
+<style>
+h1.title {text-align: center;margin-bottom: 30px;}
+h4.author {text-align: center;margin-top: 10px;margin-bottom: 20px;}
+h4.date {text-align: center;margin-top: 10px;margin-bottom: 40px;}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      comment = NA,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+
+```{r, include=FALSE}
+
+library(readxl)
+Data = read_excel("G:/My Drive/PhD/Manuscripts/4. Completeness stroke data/Raw datasets/Data_ecosystem.xlsx")
+
+View(Data)
+
+```
+
+### Create a new dataset that Defines scores
+
+```{r}
+
+library(dplyr)
+# Response-score lookup
+score_lookup = c(
+  "No" = 0,
+  "Yes" = 1, 
+
+  "Strongly disagree" = 0,
+  "Disagree" = 1,
+  "Neutral" = 2,
+  "Agree" = 3,
+  "Strongly agree" = 4,
+
+  "Not at all" = 0,
+  "To a limited extent" = 1,
+  "Moderately" = 2,
+  "Strongly" = 3,
+
+  "Partially" = 1,
+  "Fully" = 2,
+
+  "Never" = 0,
+  "Sometimes" = 1,
+  "Often" = 2,
+
+  "Occasionally" = 1,
+  "Regularly" = 2,
+
+  "Ad-hoc" = 1,
+  "Annually" = 2,
+  "More than once per year" = 3,
+
+  "Paper-based only" = 0,
+  "Paper with partial electronic entry" = 1,
+  "Fully electronic at point of care" = 2,
+  "Fully electronic and system integrated" = 3,
+
+  "Not interoperable" = 0,
+  "Limited manual exchange" = 1,
+  "Partial automated exchange" = 2,
+  "Fully interoperable" = 3,
+
+  "Fully paper-based" = 0,
+  "Hybrid paper-electronic" = 1,
+  "Fully electronic but standalone" = 2,
+  "Fully electronic and interoperable" = 3,
+
+  "Descriptive statistics only" = 0,
+  "Descriptive statistics only Trend or comparative analysis" = 1)
+
+maturity_score = maturity_data %>%
+  mutate(across(-Facility,
+                ~unname(score_lookup[as.character(.)])))
+
+```
+
+# Sum scores per domian per facility
+
+```{r}
+
+
+maturity_score = maturity_score %>%
+  mutate(`People and culture` = rowSums(select(., `Personnel responsible for stroke data management`:`Accountability for stroke data quality`)),
+         `Data activities` = rowSums(select(., `How is stroke data primarily collected?`:`Stroke data used for clinical care, reporting, research, planning`)),
+         `Business process` = rowSums(select(., `Stroke data collection & reporting embedded into routine clinical workflows`:`Long-term plan to sustain stroke data systems`)),
+         `Technology` = rowSums(select(., `Level of digitization that best describes your stroke data systems`:`Dashboards/automated reports available for monitoring stroke indicators`)),
+         OverallScore = `People and culture` +
+           `Data activities` + `Business process` +
+           Technology)
+
+# Percentage scores
+maturity_score = maturity_score %>%
+  mutate(`PC%` = (`People and culture`/ 13) * 100,
+         `DA%` = (`Data activities`/ 10) * 100,
+         `BP%` = (`Business process`/ 9) * 100,
+         `TC%` = (`Technology`/ 11) * 100)
+
+maturity_score = maturity_score %>%
+  mutate(`Overall%` = (OverallScore / 43) * 100)
+
+# Then weight scores
+maturity_score = maturity_score %>%
+  mutate(PC_Weight = (`People and culture` / 13) *30,
+         DA_Weight = (`Data activities` / 10) * 25,
+         BP_Weight = (`Business process` / 9) * 30,
+         TC_Weight = (`Technology` / 11) * 15,
+         Overall_Weight = (PC_Weight + DA_Weight +
+                            BP_Weight + TC_Weight))
+
+```
+
+### Maturity results
+
+```{r}
+maturity_results = maturity_score %>%
+  select(Facility,
+         `People and culture`:`Overall_Weight`) %>%
+  pivot_longer(cols = -Facility, names_to = "Variable",
+               values_to = "Score") %>%
+  pivot_wider(names_from = Facility,
+              values_from = Score) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 1)))
+
+library(kableExtra)
+kable(maturity_results)
+
+
+```
+
+### Prepare data for plotting
+
+```{r}
+
+### Define the data (You can source data directly from your dataset)
+
+fac = tibble::tribble(
+  ~facility, ~ownership,  ~pc,   ~da,  ~bp,    ~tech,
+  "A",       "PFP",       69.2,  50.0, 66.7,   63.6,
+  "B",       "Public",    69.2,  40.0, 77.8,   81.8,
+  "C",       "Public",    76.9,  30.0, 100.0,  36.4,
+  "D",       "Public",    76.9,  70.0, 77.8,   54.5,
+  "E",       "Public",    61.5,  80.0, 44.4,   72.7,
+  "F",       "PNFP",      61.5,  70.0, 66.7,   81.8) %>%
+  mutate(sdms     = round((pc + da + bp + tech) / 4, 1),
+    weighted = round(pc * .30 + da * .25 + bp * .30 + 
+                       tech * .15, 1),
+    ownership = factor(ownership,
+                       levels = c("Public", "PNFP", "PFP")))
+
+dom_levels = c("People & culture", "Data activities",
+                "Business processes", "Technology")
+dom_weight = c(`People & culture` = .30,
+                `Data activities` = .25,
+                `Business processes` = .30,
+                `Technology` = .15)
+
+fac_long = fac %>%
+  pivot_longer(c(pc, da, bp, tech), names_to = "dom",
+               values_to = "score") %>%
+  mutate(domain = factor(recode(dom,
+      pc = "People & culture", da = "Data activities",
+      bp = "Business processes", tech = "Technology"),
+      levels = dom_levels))
+
+# Define Shared theme, palette and maturity bands 
+own_cols = c(Public = "#2C6E9B", PNFP = "#E1812C",
+             PFP = "#3A923A")
+bands = tibble::tibble(lower = c(0, 12.5, 37.5, 62.5, 87.5),
+                       upper = c(12.5, 37.5, 62.5, 87.5, 100),
+                       label = c("Chaotic", "Reactive", "Stable",
+                                 "Proactive", "Predictive"),
+                       fill  = c("#F5F5F5", "#EDEDED", "#F5F5F5",
+                                 "#EDEDED", "#F5F5F5"))
+
+library(ggplot2)
+theme_mat = theme_minimal(base_size = 10) +
+  theme(panel.grid = element_blank(),
+        panel.border = element_rect(colour = "#444444", fill = NA,
+                                    linewidth = .4),
+        plot.title = element_text(size = 11, hjust = 0),
+        plot.caption = element_text(size = 7.4,hjust = 0,
+                                    colour = "#555555"),
+    legend.position  = "top",
+    legend.title     = element_blank(),
+    legend.key.size  = unit(.4, "cm"))
+
+
+```
+
+# Figure 3 : Domain maturity by ownership 
+
+```{r}
+
+grp = bind_rows(fac_long %>% group_by(ownership, domain) %>%
+                  summarise(mean = mean(score), .groups = "drop"),
+                fac %>% group_by(ownership) %>%
+                  summarise(mean = mean(sdms),
+                            .groups = "drop") %>%
+                  mutate(domain = "Overall (SDMS)")) %>%
+  mutate(domain = factor(domain, levels = c(dom_levels,
+                                            "Overall (SDMS)")))
+
+pts = bind_rows(fac_long %>% select(ownership, domain, score),
+                fac %>% transmute(ownership, domain = "Overall (SDMS)", score = sdms)) %>%
+  filter(ownership == "Public") %>%
+  mutate(domain = factor(domain, levels = c(dom_levels,
+                                            "Overall (SDMS)")))
+
+n_lab = fac %>% count(ownership) %>%
+  mutate(lab = paste0(ownership, " (n=", n, ")")) %>% 
+  pull(lab, ownership)
+
+fig3 = ggplot() +
+  geom_rect(data = bands, aes(xmin = -Inf, xmax = Inf,
+                              ymin = lower, ymax = upper),
+            fill = bands$fill) +
+  geom_hline(yintercept = c(12.5, 37.5, 62.5, 87.5),
+             linetype = "dashed",
+             colour = "#9A9A9A", linewidth = .3) +
+  geom_col(data = grp, aes(domain, mean, fill = ownership),
+           position = position_dodge(width = .75), width = .70,
+           colour = "white", linewidth = .3) +
+  geom_point(data = pts, aes(x = as.numeric(domain) - 0.26,
+                             y = score),
+             position = position_dodge(width = .78),
+             size = 1.1,
+             colour = "#222222", alpha = .75) +
+  geom_text(data = grp, aes(domain, mean, group = ownership,
+                            label = sprintf("%.1f", mean)),
+            position = position_dodge(width = .78),
+            vjust = -.6, size = 2.5) +
+   annotate("text", x = 5.47,
+            y = (bands$lower + bands$upper)/2,
+           label = bands$label, angle = 90, 
+           hjust = 0.5, size = 2.5,
+           colour = "#8A8A8A", fontface = "bold.italic") +
+  scale_fill_manual(values = own_cols, labels = n_lab) +
+  scale_y_continuous(limits = c(0, 100),
+  breaks = c(0, 12.5, 37.5, 62.5, 87.5, 100),
+  expand = expansion(mult = c(0, 0.02))) +
+  labs(x = NULL, y = "Standardised maturity score (%)",
+       caption = paste("PNFP - Private not-for-profit; PFP - Private for-profit; PNFP and PFP each comprise a single facility.\nBars are group means; black points are individual public facilities (n=4).")) + theme_mat +
+  theme(axis.title.y = element_text(colour = "black"),
+        axis.text.x  = element_text(colour = "black",
+                                    face = "bold"),
+        axis.text.y  = element_text(colour = "black",
+                                    face = "bold"))
+
+fig3
+
+```
+
+### Figure 4 : unweighted vs weighted, against maturity bands
+
+```{r}
+
+dumb = fac %>% 
+  mutate(ownership = factor(
+    ownership,levels = c("Public", "PNFP", "PFP")),
+    facility_lab = paste0("Facility ", facility,
+                          "  (", ownership, ")")) %>%
+  arrange(ownership, sdms) %>%
+  mutate(facility_lab = factor(facility_lab, levels = rev(facility_lab)))
+
+fig4 = ggplot(dumb) +
+  geom_rect(data = bands, aes(ymin = -Inf, ymax = Inf,
+                              xmin = lower, xmax = upper),
+            fill = bands$fill, inherit.aes = FALSE) +
+  geom_vline(xintercept = c(12.5, 37.5, 62.5, 87.5),
+             linetype = "dashed",
+             colour = "#9A9A9A", linewidth = .3) +
+  geom_segment(aes(x = sdms, xend = weighted,
+                   y = facility_lab, yend = facility_lab),
+               colour = "#BBBBBB", linewidth = 1) +
+  geom_point(aes(sdms, facility_lab, colour = ownership,
+                 shape = "Unweighted SDMS"),
+             size = 3, fill = "white",
+             stroke = 1.1) +
+  geom_point(aes(weighted, facility_lab, colour = ownership,
+                 fill = ownership,
+                 shape = "Weighted score"),
+             size = 3, stroke = 1.1) +
+  geom_text(aes(sdms, facility_lab,
+                label = sprintf("%.1f", sdms)),
+            vjust = -1.1, size = 2.5, colour = "#444444") +
+  geom_text(aes(weighted, facility_lab,
+                label = sprintf("%.1f", weighted)),
+            vjust = 1.7, size = 2.5, colour = "#444444",
+            fontface = "bold") +
+  annotate("text", x = (bands$lower + bands$upper) / 2,
+           y = 6.5,label = bands$label, size = 2.5,
+           colour = "#8A8A8A", fontface = "bold.italic") +
+  scale_colour_manual(values = own_cols) +
+  scale_fill_manual(values = own_cols) +
+  scale_x_continuous(limits = c(0, 100),
+  breaks = c(0, 12.5, 37.5, 62.5, 87.5, 100),
+  expand = expansion(mult = c(0, 0.02))) +
+  labs(x = "Maturity score (%)", y="",
+       caption = paste("PNFP - Private not-for-profit, PFP - Private for-profit\nWeighting as per domain weights: People & culture - 30%, Data activities - 25%, Business processes - 30%,\nTechnology - 15%),")) +
+  theme_mat +
+  theme(plot.margin = margin(10,8, 8, 5),
+        axis.title.y = element_text(colour = "black"),
+        axis.title.x = element_text(colour = "black"),
+        axis.text.x  = element_text(colour = "black",
+                                    face = "bold"),
+        axis.text.y  = element_text(colour = "black",
+                                    face = "bold")) +
+  scale_shape_manual(values = c("Unweighted SDMS" = 21,
+                                "Weighted score" = 21),
+                     guide = guide_legend(override.aes = list(
+                       fill = c("white", "black"),
+                       colour = "black")))
+
+fig4
+
+```
+
+### Figure 5 : which domain drives the weighted score
+
+```{r}
+
+drivers = fac_long %>%
+  group_by(ownership, domain) %>%
+  summarise(mean = mean(score), .groups = "drop") %>%
+  mutate(available = dom_weight[as.character(domain)],
+         points    = mean * available,
+         seg_lab   = sprintf("%.1f / %d", points, round(available * 100)))
+
+totals = drivers %>% group_by(ownership) %>%
+  summarise(total = sum(points), .groups = "drop")
+
+fig5 = ggplot(drivers, aes(ownership, points, fill = domain)) +
+  geom_col(width = .55, colour = "white", linewidth = .4) +
+  geom_text(aes(label = seg_lab),
+            position = position_stack(vjust = .5),
+            colour = "white", fontface = "bold", size = 2.6) +
+  geom_text(data = totals,aes(ownership, total, 
+                              label = sprintf("%.1f%%",
+                                              total)),
+            inherit.aes = FALSE, vjust = -.7, 
+            fontface = "bold", size = 3.2) +
+  scale_fill_manual(values = c(
+    "People & culture"   = "#4C72B0",
+    "Data activities"    = "#DD8452",
+    "Business processes" = "#55A868",
+    "Technology"         = "#8172B3")) +
+  scale_x_discrete(labels = n_lab) +
+  scale_y_continuous(limits = c(0, 80),expand = c(0, 0)) +
+  labs(x = NULL, y = "Weighted score\n (percentage points)", caption = paste("PNFP - Private not-for-profit; PFP - Private for-profit")) +
+  theme_mat +
+  theme(axis.title.y = element_text(colour = "black"),
+        axis.title.x = element_text(colour = "black"),
+        axis.text.x  = element_text(colour = "black",
+                                    face = "bold"),
+        axis.text.y  = element_text(colour = "black",
+                                    face = "bold"))
+
+fig5
+
+```
+
+# Figure 2: Item-level matrix
+
+```{r}
+
+items = tibble::tribble(
+  ~item,  ~domain,  ~max, ~A, ~B, ~C, ~D, ~E, ~F, ~invariant,
+  "F1  Designated stroke-data personnel",   "People & culture",   1, 1,1,0,0,0,1, FALSE,
+  "F2  Staff see stroke data as critical",  "People & culture",   4, 0,3,4,4,4,2, FALSE,
+  "F3  Routine staff training",             "People & culture",   3, 3,1,1,1,0,2, FALSE,
+  "F4  Data used for audit / QI",           "People & culture",   1, 1,1,1,1,1,0, FALSE,
+  "F5  Leadership promotes data use",       "People & culture",   3, 3,2,3,3,2,2, FALSE,
+  "F6  Accountability for data quality",    "People & culture",   1, 1,1,1,1,1,1, TRUE,
+  "F7  Mode of data capture",               "Data activities",    3, 1,1,0,3,3,2, FALSE,
+  "F8  Standardised definitions / ICD",     "Data activities",    1, 1,1,1,1,1,1, TRUE,
+  "F9  Routine data-quality checks",        "Data activities",    2, 2,1,1,1,2,2, FALSE,
+  "F10 Level of analysis performed",        "Data activities",    3, 0,0,0,1,1,1, FALSE,
+  "F11 Data reused for >1 purpose",         "Data activities",    1, 1,1,1,1,1,1, TRUE,
+  "F12 Embedded in clinical workflow",      "Business processes", 2, 2,2,2,1,1,1, FALSE,
+  "F13 SOPs for stroke data",               "Business processes", 1, 0,1,1,0,0,1, FALSE,
+  "F14 Data reviewed in QI meetings",       "Business processes", 2, 2,1,2,2,1,1, FALSE,
+  "F15 Formal governance structures",       "Business processes", 1, 0,1,1,1,1,1, FALSE,
+  "F16 Data inform planning / policy",      "Business processes", 2, 1,1,2,2,1,2, FALSE,
+  "F17 Long-term sustainability plan",      "Business processes", 1, 1,1,1,1,0,0, FALSE,
+  "F18 Level of digitisation",              "Technology",         3, 1,1,0,1,1,1, FALSE,
+  "F19 Interoperability with other systems","Technology",         3, 2,3,1,2,2,3, FALSE,
+  "F20 Unique patient identifier",          "Technology",         1, 0,1,1,0,1,1, FALSE,
+  "F21 Secure storage",                     "Technology",         1, 1,1,1,1,1,1, TRUE,
+  "F22 Secure backup",                      "Technology",         1, 1,1,0,0,1,1, FALSE,
+  "F23 Access controls",                    "Technology",         1, 1,1,1,1,1,1, TRUE,
+  "F24 Dashboards / automated reports",     "Technology",         1, 1,1,0,1,1,1, FALSE) %>%
+  mutate(domain = factor(domain, levels = dom_levels))
+
+# Facility order grouped by ownership
+fac_order = c("B", "C", "D", "E", "F", "A")
+
+items_long = items %>%
+  pivot_longer(A:F, names_to = "facility", values_to = "score") %>%
+  mutate(prop = score / max,
+         facility = factor(facility, levels = fac_order),
+         item = factor(item, levels = rev(items$item)),
+         cell = paste0(score, "/", max))
+
+library(ggh4x)
+fig2 = ggplot(items_long, aes(facility, item, fill = prop)) +
+  geom_tile(colour = "white", linewidth = .4) +
+  geom_text(aes(label = cell), colour = "black",size = 2.3,
+            fontface = "bold") +
+  geom_vline(xintercept = c(4.5, 5.5), colour = "#333333",
+             linewidth = 0.8) +
+  facet_grid2(domain ~ .,scales = "free_y", space = "free_y",
+              strip = strip_themed(
+                text_y = elem_list_text(colour = c(
+      "#4C72B0", "#DD8452", "#55A868", "#8172B3"),
+      face = c("bold","bold", "bold", "bold"),
+      vjust=c(-2,-2,-2,-2)))) +
+  scale_fill_gradientn(colours = c(
+    "#C0392B", "#E8A33D", "#F5E17A", "#9BCB6B", "#3F8F3F"),
+    limits = c(0, 1), 
+    name = "Proportion of maximum item score",
+    guides(fill = guide_colourbar(
+      barheight = unit(6, "cm"), barwidth = unit(0.4, "cm"),
+    title.position = "right"))) +
+  scale_x_discrete(labels = paste0("Facility ", fac_order),
+                   position = "bottom") +
+  coord_cartesian(clip = "off") +
+  labs(x = NULL, y = NULL, caption = paste("Facilities are grouped by ownership: Public (B, C, D, E) | PNFP (F) | PFP (A).\nPNFP - Private not-for-profit; PFP - Private for-profit")) +
+  theme_minimal(base_size = 9) +
+  theme(panel.grid = element_blank(),
+        strip.placement = "outside",
+        strip.text.y.left = element_text(
+          angle = 0, face = "bold", size = 8),
+        axis.text.y = element_blank(),
+        legend.position = "right",
+        plot.caption = element_text(
+          size = 7.2, colour = "#555555", hjust = 0)) +
+  geom_text(data = items_long %>% distinct(item, domain),
+            aes(x = 0.4, y = item, label = item, 
+                colour = domain),hjust = 1, size = 2.6,
+            inherit.aes = FALSE) +
+scale_colour_manual(values = c(
+  "People & culture" = "#4C72B0",
+  "Data activities" = "#DD8452",
+  "Business processes" = "#55A868",
+  "Technology" = "#8172B3"), guide = "none") +
+  theme(plot.margin = margin(5.5, 5.5, 5.5, 130),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(colour = "black",
+                                   face = "bold"),
+        panel.grid = element_blank(),
+        legend.position = "right",
+  legend.direction = "vertical",
+  legend.title = element_text(
+    angle = 0,
+    hjust = 0
+  ))
+
+library(cowplot)
+library(grid)
+
+p_no_title = fig2 +
+  scale_fill_gradientn(
+    colours = c("#C0392B", "#E8A33D", "#F5E17A",
+                "#9BCB6B", "#3F8F3F"),
+    limits = c(0, 1), name = NULL) +
+  guides(fill = guide_colourbar(barheight = unit(7, "cm"),
+                       barwidth  = unit(0.35, "cm")))
+
+leg = cowplot::get_legend(
+  p_no_title + theme(legend.position = "right",
+      legend.margin = margin(-15,0, 0, 10)))
+
+leg_title = grid::textGrob(
+  "Proportion of maximum item score", rot = 90,
+  vjust=-2, hjust=0.5,
+  gp = grid::gpar(fontsize = 9))
+
+custom_legend = cowplot::plot_grid(leg, leg_title, nrow = 1,
+                ncol = 2, rel_widths = c(1, 2), align = "v")
+
+fig2_final = cowplot::plot_grid(
+  p_no_title + theme(legend.position = "none"),
+  custom_legend, nrow = 1, rel_widths = c(1, 0.15),
+  align = "h")
+
+fig2_final
+
+
+```
+
+
+
+# Supplemental figure : sensitivity to non-discriminating items
+
+```{r}
+
+sens = items %>%
+  pivot_longer(A:F, names_to = "facility", values_to = "score") %>%
+  group_by(facility, domain) %>%
+  summarise(full = sum(score) / sum(max) * 100,
+            trim = sum(score[!invariant]) /
+              sum(max[!invariant]) * 100,
+            .groups = "drop") %>%
+  group_by(facility) %>%
+  summarise(reported = round(mean(full), 1),
+            trimmed  = round(mean(trim), 1), .groups = "drop") %>%
+  # use the published SDMS on the x-axis so the figure matches Table 2
+  left_join(fac %>% select(facility, sdms), by = "facility") %>%
+  mutate(reported = sdms,
+         drops    = trimmed < 62.5 & reported >= 62.5,
+         maintained = trimmed < 62.5 & reported < 62.5,
+         facility_lab = factor(paste0("Facility ", facility),
+                               levels = paste0("Facility ", facility[order(sdms)])))
+
+figS = ggplot(sens) +
+  geom_rect(data = bands, aes(ymin = -Inf, ymax = Inf,
+                              xmin = lower, xmax = upper),
+            fill = bands$fill, inherit.aes = FALSE) +
+  geom_vline(xintercept = c(12.5, 37.5, 62.5, 87.5), linetype = "dashed",
+             colour = "#9A9A9A", linewidth = .3) +
+  geom_segment(aes(x = reported, xend = trimmed,
+                   y = facility_lab, yend = facility_lab,
+                   colour = ifelse(maintained, "maintained",
+                                   as.character(drops))),
+               arrow = arrow(length = unit(.16, "cm"),
+                             type = "closed"), linewidth = .8) +
+  geom_point(aes(reported, facility_lab), shape = 21,
+             fill = "white", colour = "#333333",
+             size = 2.8, stroke = 1) +
+  geom_point(aes(trimmed, facility_lab,
+                 colour = ifelse(maintained, "maintained",
+                                 as.character(drops))),
+             size = 2.8) +
+  geom_text(aes(reported, facility_lab,
+                label = sprintf("%.1f", reported)),
+            hjust = -.35, size = 2.4, colour = "#444444") +
+  geom_text(aes(trimmed, facility_lab,
+                label = sprintf("%.1f", trimmed),
+                colour = ifelse(maintained, "maintained",
+                                as.character(drops))),
+            hjust = 1.35, size = 2.4, show.legend = FALSE) +
+  annotate("text", x = (bands$lower + bands$upper) / 2,
+           y = 6.6, label = bands$label,
+           size = 2.5, colour = "#8A8A8A",
+           fontface = "bold.italic") +
+  scale_colour_manual(
+  values = c(`FALSE` = "#888888",`TRUE` = "#c08f2f",
+             `maintained` = "#c02f2f"),
+  labels = c(`FALSE` = "No change in level",
+             `TRUE` = "Reclassified to Level 3 (stable)",
+             `maintained` = "Maintained")) +
+  scale_x_continuous(limits = c(0, 100),
+  breaks = c(0, 12.5, 37.5, 62.5, 87.5, 100),
+  expand = expansion(mult = c(0, 0))) +
+  coord_cartesian(clip = "off", ylim = c(0.5, 6.5)) +
+  labs(x = "Stroke Data Maturity Score (%)", y = NULL,
+       caption = paste("Hollow point = as reported (24 items); filled point = excluding the five items scored at maximum by all facilities (F6, F8, F11, F21, F23).\nFacilities A and C move from proactive (Level 4) to stable (Level 3).")) +
+  theme_mat + theme(plot.margin = margin(24, 8, 8, 8)) +
+  theme(axis.title.y = element_text(colour = "black"),
+        axis.title.x = element_text(colour = "black"),
+        axis.text.x  = element_text(colour = "black",
+                                    face = "bold"),
+        axis.text.y  = element_text(colour = "black",
+                                    face = "bold"))
+
+figS
+
+```
+
+### Supplemental Table
+
+```{r}
+
+kable(Table6_data)
+
+```
+
+
