@@ -592,11 +592,6 @@ figS = ggplot(sens) +
 
 figS
 
-```
-
-### Supplemental Table
-
-```{r}
 
 kable(Table6_data)
 
