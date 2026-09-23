@@ -592,9 +592,6 @@ figS = ggplot(sens) +
 
 figS
 
-
-kable(Table6_data)
-
 ```
 
 
